@@ -2,208 +2,385 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// 쿠키런 스타일 러닝게임의 맵 타일 매니저.
-/// 플레이어가 달리면 앞에 타일을 계속 생성하고,
-/// 지나간 타일은 삭제하여 무한 러닝 맵을 구현한다.
+/// 쿠키런 스타일 러닝게임의 타일 매니저.
+/// 타일 프리팹을 촘촘하게 너비에 맞춰 이어 붙이고,
+/// 그라운드 프리팹에서 Y축 오프셋을 가져와 위치를 잡는다.
+/// 
+/// ★ Edit 모드에서도 타일 프리뷰가 보인다.
+///   Inspector 값 변경 시 자동으로 프리뷰가 갱신된다.
+/// 
+/// [사용법]
+/// 1. 빈 GameObject에 이 스크립트를 추가
+/// 2. tilePrefab  — 반복 생성할 타일 프리팹 할당
+/// 3. groundPrefab — Y축 오프셋 참조용 그라운드 프리팹 할당
+/// 4. Play!
 /// </summary>
+[ExecuteInEditMode]
 public class TileManager : MonoBehaviour
 {
-    [Header("=== 타일 프리팹 ===")]
-    [Tooltip("Ground Tile 프리팹 (GroundTile 컴포넌트가 붙어있어야 함)")]
-    [SerializeField] private GameObject[] tilePrefabs;
+    [Header("=== 프리팹 할당 ===")]
+    [Tooltip("반복 생성할 타일 프리팹")]
+    public GameObject tilePrefab;
 
-    [Header("=== 맵 생성 설정 ===")]
-    [Tooltip("화면에 유지할 최소 타일 개수")]
-    [SerializeField] private int tilesAhead = 5;
+    [Tooltip("Y축 오프셋 참조용 그라운드 프리팹 (SpriteRenderer 필요)")]
+    public GameObject groundPrefab;
 
-    [Tooltip("플레이어 뒤에 유지할 타일 개수 (이보다 멀면 삭제)")]
-    [SerializeField] private int tilesBehind = 2;
+    [Header("=== 타일 설정 ===")]
+    [Tooltip("화면에 유지할 타일 수 (앞쪽 버퍼 포함)")]
+    [Range(5, 30)]
+    public int maxTileCount = 15;
 
-    [Header("=== 참조 ===")]
-    [Tooltip("플레이어 Transform (타일 생성/삭제 기준)")]
-    [SerializeField] private Transform player;
+    [Tooltip("맵 스크롤 속도 (Units/sec)")]
+    public float scrollSpeed = 5f;
 
-    [Header("=== 맵 스크롤 설정 ===")]
-    [Tooltip("맵 스크롤 속도 (플레이어가 고정이고 맵이 움직이는 방식일 때 사용)")]
-    [SerializeField] private float scrollSpeed = 8f;
+    [Header("=== 디버그 ===")]
+    [Tooltip("타일 너비를 수동 지정 (0이면 SpriteRenderer에서 자동 계산)")]
+    public float overrideTileWidth = 0f;
 
-    [Tooltip("true: 맵이 왼쪽으로 이동 (플레이어 고정) / false: 플레이어 기준으로 타일 생성")]
-    [SerializeField] private bool useScrollMode = true;
+    [Tooltip("Edit 모드 프리뷰 활성화")]
+    public bool showPreview = true;
 
-    // 활성 타일 목록
-    private readonly List<GameObject> activeTiles = new();
+    // ── 내부 변수 ──
+    private float _tileWidth;       // 타일 하나의 너비
+    private float _groundYOffset;   // 그라운드 프리팹에서 가져온 Y 오프셋
+    private float _nextSpawnX;      // 다음 타일 생성 위치
+    private Queue<GameObject> _activeTiles = new Queue<GameObject>();
 
-    // 다음 타일 스폰 위치 (X좌표)
-    private float nextSpawnX = 0f;
+    // Edit 모드 프리뷰용
+    private List<GameObject> _previewTiles = new List<GameObject>();
+    private int _lastPreviewCount = -1;
+    private float _lastPreviewWidth = -1f;
+    private float _lastPreviewYOffset = float.NaN;
+    private GameObject _lastTilePrefab;
+    private GameObject _lastGroundPrefab;
 
-    // 기본 타일 길이 (프리팹에서 가져옴)
-    private float defaultTileLength = 20f;
+    // ───────────────────────────────────────────
+    //  라이프사이클
+    // ───────────────────────────────────────────
 
-    // ──────────────────────────────────────────────
-    //  Unity 생명주기
-    // ──────────────────────────────────────────────
-
-    private void Start()
+    void Start()
     {
-        // 기본 타일 길이 미리 확인
-        if (tilePrefabs != null && tilePrefabs.Length > 0)
+        if (Application.isPlaying)
         {
-            var gt = tilePrefabs[0].GetComponent<GroundTile>();
-            if (gt != null) defaultTileLength = gt.TileLength;
-        }
+            // 플레이 모드 진입 시 프리뷰 정리
+            ClearPreviewTiles();
 
-        // 초기 타일 생성
-        for (int i = 0; i < tilesAhead + tilesBehind; i++)
-        {
-            SpawnTile();
+            CalculateTileWidth();
+            CalculateGroundYOffset();
+            SpawnInitialTiles();
         }
     }
 
-    private void Update()
+    void Update()
     {
-        if (useScrollMode)
+        if (Application.isPlaying)
         {
-            // ── 스크롤 모드: 타일이 왼쪽으로 이동 ──
+            // 플레이 모드: 스크롤 + 재활용
             ScrollTiles();
-            EnsureTilesAhead_ScrollMode();
-            RemovePassedTiles_ScrollMode();
+            RecycleAndSpawn();
         }
         else
         {
-            // ── 플레이어 이동 모드: 플레이어 위치 기준 ──
-            if (player == null) return;
-            EnsureTilesAhead_PlayerMode();
-            RemovePassedTiles_PlayerMode();
+            // Edit 모드: 프리뷰만 갱신
+            if (showPreview)
+            {
+                RefreshPreviewIfNeeded();
+            }
+            else
+            {
+                ClearPreviewTiles();
+            }
         }
     }
 
-    // ──────────────────────────────────────────────
-    //  타일 생성
-    // ──────────────────────────────────────────────
-
-    private void SpawnTile()
+    void OnDestroy()
     {
-        if (tilePrefabs == null || tilePrefabs.Length == 0)
+        // 스크립트 제거 시 프리뷰 정리
+        if (!Application.isPlaying)
         {
-            Debug.LogWarning("[TileManager] 타일 프리팹이 설정되지 않았습니다!");
+            ClearPreviewTiles();
+        }
+    }
+
+    void OnDisable()
+    {
+        if (!Application.isPlaying)
+        {
+            ClearPreviewTiles();
+        }
+    }
+
+    void OnValidate()
+    {
+        // Inspector 값 변경 시 프리뷰 강제 갱신
+        if (!Application.isPlaying)
+        {
+            _lastPreviewCount = -1; // 강제 갱신 트리거
+        }
+    }
+
+    // ───────────────────────────────────────────
+    //  Edit 모드 프리뷰
+    // ───────────────────────────────────────────
+
+    /// <summary>
+    /// Inspector 값이 바뀌었을 때만 프리뷰를 다시 생성한다.
+    /// </summary>
+    private void RefreshPreviewIfNeeded()
+    {
+        if (tilePrefab == null) 
+        {
+            ClearPreviewTiles();
             return;
         }
 
-        // 랜덤 타일 프리팹 선택
-        GameObject prefab = tilePrefabs[UnityEngine.Random.Range(0, tilePrefabs.Length)];
-        Vector3 spawnPos = new Vector3(nextSpawnX, 0f, 0f);
+        CalculateTileWidth();
+        CalculateGroundYOffset();
 
-        GameObject tile = Instantiate(prefab, spawnPos, Quaternion.identity, transform);
-        activeTiles.Add(tile);
+        // 값이 변하지 않았으면 스킵
+        bool changed = _lastPreviewCount != maxTileCount
+                     || !Mathf.Approximately(_lastPreviewWidth, _tileWidth)
+                     || !Mathf.Approximately(_lastPreviewYOffset, _groundYOffset)
+                     || _lastTilePrefab != tilePrefab
+                     || _lastGroundPrefab != groundPrefab;
 
-        // GroundTile 컴포넌트에서 타일 길이 가져오고 오브젝트 스폰
-        GroundTile groundTile = tile.GetComponent<GroundTile>();
-        float length = defaultTileLength;
+        if (!changed) return;
 
-        if (groundTile != null)
-        {
-            length = groundTile.TileLength;
-            groundTile.SpawnObjects();
-        }
-
-        nextSpawnX += length;
+        RebuildPreview();
     }
 
-    // ──────────────────────────────────────────────
-    //  스크롤 모드 (맵이 왼쪽으로 이동)
-    // ──────────────────────────────────────────────
+    /// <summary>
+    /// 프리뷰 타일을 전부 삭제 후 다시 생성한다.
+    /// </summary>
+    private void RebuildPreview()
+    {
+        ClearPreviewTiles();
 
+        if (tilePrefab == null || _tileWidth <= 0f) return;
+
+        // Scene 카메라 또는 Main 카메라 기준
+        Camera cam = Camera.main;
+        float startX;
+
+        if (cam != null && cam.orthographic)
+        {
+            startX = cam.transform.position.x - cam.orthographicSize * cam.aspect;
+        }
+        else
+        {
+            // 카메라가 없으면 이 오브젝트 위치 기준
+            startX = transform.position.x;
+        }
+
+        float spawnX = startX;
+
+        for (int i = 0; i < maxTileCount; i++)
+        {
+            float posX = spawnX + _tileWidth * 0.5f;
+            Vector3 pos = new Vector3(posX, _groundYOffset, 0f);
+
+#if UNITY_EDITOR
+            GameObject tile = (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(tilePrefab, transform);
+            tile.transform.position = pos;
+            tile.transform.rotation = Quaternion.identity;
+#else
+            GameObject tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
+#endif
+            tile.hideFlags = HideFlags.DontSave | HideFlags.NotEditable;
+            tile.name = $"[Preview] Tile_{i}";
+            _previewTiles.Add(tile);
+
+            spawnX += _tileWidth;
+        }
+
+        // 캐시 갱신
+        _lastPreviewCount = maxTileCount;
+        _lastPreviewWidth = _tileWidth;
+        _lastPreviewYOffset = _groundYOffset;
+        _lastTilePrefab = tilePrefab;
+        _lastGroundPrefab = groundPrefab;
+    }
+
+    /// <summary>
+    /// 프리뷰 타일을 모두 삭제한다.
+    /// </summary>
+    private void ClearPreviewTiles()
+    {
+        foreach (GameObject tile in _previewTiles)
+        {
+            if (tile != null)
+            {
+                DestroyImmediate(tile);
+            }
+        }
+        _previewTiles.Clear();
+
+        // 혹시 남아있는 자식 프리뷰도 정리
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            GameObject child = transform.GetChild(i).gameObject;
+            if (child.name.StartsWith("[Preview]"))
+            {
+                DestroyImmediate(child);
+            }
+        }
+
+        _lastPreviewCount = -1;
+    }
+
+    // ───────────────────────────────────────────
+    //  초기화
+    // ───────────────────────────────────────────
+
+    /// <summary>
+    /// 타일 프리팹의 SpriteRenderer bounds에서 너비를 계산한다.
+    /// overrideTileWidth > 0 이면 수동 값을 사용한다.
+    /// </summary>
+    private void CalculateTileWidth()
+    {
+        if (overrideTileWidth > 0f)
+        {
+            _tileWidth = overrideTileWidth;
+            return;
+        }
+
+        if (tilePrefab == null)
+        {
+            Debug.LogError("[TileManager] tilePrefab이 할당되지 않았습니다!");
+            return;
+        }
+
+        // SpriteRenderer에서 가져오기
+        SpriteRenderer sr = tilePrefab.GetComponent<SpriteRenderer>();
+        if (sr == null)
+            sr = tilePrefab.GetComponentInChildren<SpriteRenderer>();
+
+        if (sr != null)
+        {
+            _tileWidth = sr.bounds.size.x;
+        }
+        else
+        {
+            // Renderer fallback
+            Renderer rend = tilePrefab.GetComponent<Renderer>();
+            if (rend == null)
+                rend = tilePrefab.GetComponentInChildren<Renderer>();
+
+            if (rend != null)
+            {
+                _tileWidth = rend.bounds.size.x;
+            }
+            else
+            {
+                Debug.LogWarning("[TileManager] 타일 프리팹에 Renderer가 없어 기본 너비 1을 사용합니다.");
+                _tileWidth = 1f;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 그라운드 프리팹의 Transform.position.y를 Y 오프셋으로 사용한다.
+    /// </summary>
+    private void CalculateGroundYOffset()
+    {
+        if (groundPrefab == null)
+        {
+            _groundYOffset = 0f;
+            return;
+        }
+
+        // 그라운드 프리팹의 Y 위치를 오프셋으로 사용
+        _groundYOffset = groundPrefab.transform.position.y;
+    }
+
+    /// <summary>
+    /// 시작 시 화면을 채울 만큼 타일을 촘촘하게 생성한다.
+    /// </summary>
+    private void SpawnInitialTiles()
+    {
+        // 카메라 왼쪽 끝에서 시작
+        Camera cam = Camera.main;
+        float camLeftEdge = cam.transform.position.x - cam.orthographicSize * cam.aspect;
+
+        _nextSpawnX = camLeftEdge;
+
+        for (int i = 0; i < maxTileCount; i++)
+        {
+            SpawnTile();
+        }
+    }
+
+    // ───────────────────────────────────────────
+    //  타일 생성 / 재활용 (플레이 모드 전용)
+    // ───────────────────────────────────────────
+
+    /// <summary>
+    /// 타일 하나를 _nextSpawnX 위치에 생성하고, 큐에 등록한다.
+    /// 타일 Pivot이 중앙이라고 가정하고 절반 너비만큼 오프셋 적용.
+    /// </summary>
+    private void SpawnTile()
+    {
+        // 중앙 피벗 기준: 스프라이트의 왼쪽 끝이 _nextSpawnX에 오도록
+        float spawnX = _nextSpawnX + _tileWidth * 0.5f;
+
+        Vector3 pos = new Vector3(spawnX, _groundYOffset, 0f);
+        GameObject tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
+        _activeTiles.Enqueue(tile);
+
+        // 다음 타일 위치는 현재 타일의 오른쪽 끝
+        _nextSpawnX += _tileWidth;
+    }
+
+    /// <summary>
+    /// 모든 활성 타일을 왼쪽으로 스크롤한다 (러닝게임 방식).
+    /// </summary>
     private void ScrollTiles()
     {
         float delta = scrollSpeed * Time.deltaTime;
+        _nextSpawnX -= delta;
 
-        // 모든 타일을 왼쪽으로 이동
-        foreach (var tile in activeTiles)
+        foreach (GameObject tile in _activeTiles)
         {
             if (tile != null)
+            {
                 tile.transform.position += Vector3.left * delta;
-        }
-
-        // nextSpawnX도 같이 이동
-        nextSpawnX -= delta;
-    }
-
-    private void EnsureTilesAhead_ScrollMode()
-    {
-        // 화면 오른쪽 끝 근처까지 타일이 있어야 함
-        float screenRightEdge = Camera.main != null
-            ? Camera.main.transform.position.x + Camera.main.orthographicSize * Camera.main.aspect + defaultTileLength
-            : 20f;
-
-        while (nextSpawnX < screenRightEdge + defaultTileLength * tilesAhead)
-        {
-            SpawnTile();
+            }
         }
     }
 
-    private void RemovePassedTiles_ScrollMode()
+    /// <summary>
+    /// 화면 왼쪽 밖으로 나간 타일을 삭제하고 오른쪽에 새 타일을 생성한다.
+    /// </summary>
+    private void RecycleAndSpawn()
     {
-        float screenLeftEdge = Camera.main != null
-            ? Camera.main.transform.position.x - Camera.main.orthographicSize * Camera.main.aspect
-            : -15f;
+        if (_activeTiles.Count == 0) return;
 
-        for (int i = activeTiles.Count - 1; i >= 0; i--)
+        Camera cam = Camera.main;
+        float camLeftEdge = cam.transform.position.x - cam.orthographicSize * cam.aspect;
+        float destroyThreshold = camLeftEdge - _tileWidth;
+
+        // 큐 앞쪽(가장 왼쪽) 타일이 화면 밖이면 제거
+        while (_activeTiles.Count > 0)
         {
-            if (activeTiles[i] == null)
+            GameObject oldest = _activeTiles.Peek();
+
+            if (oldest == null)
             {
-                activeTiles.RemoveAt(i);
+                _activeTiles.Dequeue();
                 continue;
             }
 
-            GroundTile gt = activeTiles[i].GetComponent<GroundTile>();
-            float tileEnd = activeTiles[i].transform.position.x + (gt != null ? gt.TileLength : defaultTileLength);
-
-            // 타일의 오른쪽 끝이 화면 왼쪽 밖으로 나갔으면 삭제
-            if (tileEnd < screenLeftEdge - defaultTileLength)
+            if (oldest.transform.position.x < destroyThreshold)
             {
-                if (gt != null) gt.ClearSpawnedObjects();
-                Destroy(activeTiles[i]);
-                activeTiles.RemoveAt(i);
+                _activeTiles.Dequeue();
+                Destroy(oldest);
+
+                // 오른쪽에 새 타일 추가
+                SpawnTile();
             }
-        }
-    }
-
-    // ──────────────────────────────────────────────
-    //  플레이어 이동 모드
-    // ──────────────────────────────────────────────
-
-    private void EnsureTilesAhead_PlayerMode()
-    {
-        float playerX = player.position.x;
-        float aheadDistance = defaultTileLength * tilesAhead;
-
-        while (nextSpawnX < playerX + aheadDistance)
-        {
-            SpawnTile();
-        }
-    }
-
-    private void RemovePassedTiles_PlayerMode()
-    {
-        float playerX = player.position.x;
-        float behindDistance = defaultTileLength * tilesBehind;
-
-        for (int i = activeTiles.Count - 1; i >= 0; i--)
-        {
-            if (activeTiles[i] == null)
+            else
             {
-                activeTiles.RemoveAt(i);
-                continue;
-            }
-
-            GroundTile gt = activeTiles[i].GetComponent<GroundTile>();
-            float tileEnd = activeTiles[i].transform.position.x + (gt != null ? gt.TileLength : defaultTileLength);
-
-            if (tileEnd < playerX - behindDistance)
-            {
-                if (gt != null) gt.ClearSpawnedObjects();
-                Destroy(activeTiles[i]);
-                activeTiles.RemoveAt(i);
+                break;
             }
         }
     }
