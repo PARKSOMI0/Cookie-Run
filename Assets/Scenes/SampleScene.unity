@@ -836,8 +836,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CookieJump
   jumpForce: 7.5
   maxJumpCount: 2
+  slideKey: 274
+  slideColliderRatio: 0.5
   floorTag: floor
   _isGrounded: 0
+  _isSliding: 0
   _currentJumpCount: 0
 --- !u!114 &660288149
 MonoBehaviour:
