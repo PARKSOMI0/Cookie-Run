@@ -1139,6 +1139,57 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 966431587}
   m_CullTransparentMesh: 1
+--- !u!1 &1256011347
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1256011349}
+  - component: {fileID: 1256011348}
+  m_Layer: 0
+  m_Name: SoundManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1256011348
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1256011347}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a8e71c666c080d45920b5d013c4fe30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SoundManager
+  "\uBC30\uACBD\uC74C\uC545": {fileID: 8300000, guid: 5f275c6450c57104d8916e5b67cc3f52, type: 3}
+  "BGM\uBCFC\uB968": 0.5
+  "\uC810\uD504\uC18C\uB9AC": {fileID: 8300000, guid: 45e7e7ee20c816047bd014089055ffcd, type: 3}
+  "\uD53C\uACA9\uC18C\uB9AC": {fileID: 8300000, guid: a91915872cb4d3a4ab915dee75f06659, type: 3}
+  "\uC2AC\uB77C\uC774\uB529\uC18C\uB9AC": {fileID: 8300000, guid: d8d448b0841430746ac706f44876a1a9, type: 3}
+  "\uD6A8\uACFC\uC74C\uBCFC\uB968": 1
+  "\uCD5C\uB300\uB3D9\uC2DC\uD6A8\uACFC\uC74C": 10
+--- !u!4 &1256011349
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1256011347}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.23791, y: 0.29296, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1277539838
 GameObject:
   m_ObjectHideFlags: 0
@@ -1522,10 +1573,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ObstacleManager
   tileManager: {fileID: 41154195}
   obstacles:
-  - name: 1
+  - enabled: 1
+    name: 1
     prefab: {fileID: 6021648989413126411, guid: d85a0e97af8570e4ba6890b28a3af5c3, type: 3}
-  - name: apples
+  - enabled: 1
+    name: apples
     prefab: {fileID: 6021648989413126411, guid: 13ec33e8c024b854ca6552c5eee0b7ce, type: 3}
+  - enabled: 1
+    name: bug
+    prefab: {fileID: 6021648989413126411, guid: db5588042f87c3b4f89673e0a875fa34, type: 3}
+  - enabled: 1
+    name: star
+    prefab: {fileID: 6021648989413126411, guid: 0be8b860a88d6c14bb75e2ea496d2109, type: 3}
   spawnIntervalMin: 1.5
   spawnIntervalMax: 3
   obstacleTag: Obstacle
@@ -1666,3 +1725,4 @@ SceneRoots:
   - {fileID: 41154194}
   - {fileID: 1738479925}
   - {fileID: 1604596441}
+  - {fileID: 1256011349}

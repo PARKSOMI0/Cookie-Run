@@ -125,6 +125,9 @@ public class ObstacleDamage : MonoBehaviour
         PlayHitEffect();
         CameraPunch();
         StartCoroutine(InvincibleTimer());
+
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.피격소리재생();
     }
 
     // ───────────────────────────────────────────

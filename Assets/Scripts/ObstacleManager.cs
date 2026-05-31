@@ -147,13 +147,25 @@ public class ObstacleManager : MonoBehaviour
             return;
         }
 
+        // 활성화된 장애물만 필터링
+        System.Collections.Generic.List<ObstacleEntry> activeList = new System.Collections.Generic.List<ObstacleEntry>();
+        for (int i = 0; i < obstacles.Length; i++)
+        {
+            if (obstacles[i].enabled && obstacles[i].prefab != null)
+                activeList.Add(obstacles[i]);
+        }
+
+        if (activeList.Count == 0)
+        {
+            Debug.LogWarning("[ObstacleManager] 활성화된 장애물이 없습니다!");
+            return;
+        }
+
         // 랜덤 장애물 선택
-        int index = Random.Range(0, obstacles.Length);
-        ObstacleEntry entry = obstacles[index];
+        ObstacleEntry entry = activeList[Random.Range(0, activeList.Count)];
 
         if (entry.prefab == null)
         {
-            Debug.LogWarning($"[ObstacleManager] '{entry.name}' 프리팹이 없습니다!");
             return;
         }
 
@@ -223,6 +235,9 @@ public class ObstacleManager : MonoBehaviour
 [System.Serializable]
 public class ObstacleEntry
 {
+    [Tooltip("활성화 여부")]
+    public bool enabled = true;
+
     [Tooltip("장애물 이름 (구분용)")]
     public string name;
 

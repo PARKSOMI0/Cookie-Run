@@ -122,9 +122,6 @@ public class CookieJump : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 점프 횟수가 남아있으면 점프한다.
-    /// </summary>
     private void TryJump()
     {
         if (_currentJumpCount < maxJumpCount)
@@ -135,6 +132,9 @@ public class CookieJump : MonoBehaviour
 
             _currentJumpCount++;
             _isGrounded = false;
+
+            if (SoundManager.Instance != null)
+                SoundManager.Instance.점프소리재생();
         }
     }
 
@@ -149,6 +149,9 @@ public class CookieJump : MonoBehaviour
     {
         if (_isSliding) return;
         _isSliding = true;
+
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.슬라이딩소리재생();
 
         if (_col != null)
         {
