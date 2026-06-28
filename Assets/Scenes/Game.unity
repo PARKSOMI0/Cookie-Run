@@ -2174,13 +2174,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::daynight
   dayDuration: 5
   nightDuration: 5
+  transitionSpeed: 1.5
+  autoFitToScreen: 1
+  useGradient: 1
+  dayColor: {r: 0.4, g: 0.7, b: 1, a: 1}
+  nightColor: {r: 0.05, g: 0.05, b: 0.15, a: 1}
+  dayTopColor: {r: 0.53, g: 0.81, b: 0.92, a: 1}
+  dayBottomColor: {r: 0.56015986, g: 0.9764151, b: 0.4836018, a: 1}
+  nightTopColor: {r: 0.5677786, g: 0.10252758, b: 0.6037736, a: 1}
+  nightBottomColor: {r: 0.39014238, g: 0.21404415, b: 0.6981132, a: 1}
   isNight: 0
-  dayTopColor: {r: 0.3039783, g: 0.7552513, b: 0.9339623, a: 1}
-  dayBottomColor: {r: 0.4338141, g: 1, b: 0.17647058, a: 1}
-  nightTopColor: {r: 0.80074173, g: 0.39337844, b: 0.9811321, a: 1}
-  nightBottomColor: {r: 0.4073947, g: 0.24597278, b: 0.9481132, a: 1}
-  transitionDuration: 1
-  targetSpriteRenderer: {fileID: 251250408}
 --- !u!1 &1604596438
 GameObject:
   m_ObjectHideFlags: 0

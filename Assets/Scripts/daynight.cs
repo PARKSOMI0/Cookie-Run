@@ -1,71 +1,88 @@
 using UnityEngine;
+using UnityEngine.UI;
 
 public class daynight : MonoBehaviour
 {
     [Header("낮/밤 유지 시간 설정 (초)")]
-    [Tooltip("낮 상태가 유지되는 시간")]
     public float dayDuration = 10f;
-    [Tooltip("밤 상태가 유지되는 시간")]
     public float nightDuration = 10f;
+    
+    [Header("낮/밤 전환 속도 (초)")]
+    public float transitionSpeed = 1.5f;
 
-    [Tooltip("현재 상태 (테스트용으로 직접 체크해볼 수 있습니다)")]
+    [Header("화면 크기 맞춤")]
+    [Tooltip("체크하면 모바일 기기의 화면 비율에 상관없이 배경이 화면에 꽉 차도록 자동 조절됩니다.")]
+    public bool autoFitToScreen = true;
+
+    [Header("=== 색상 모드 설정 ===")]
+    [Tooltip("체크하면 위아래 그라데이션을 사용하고, 해제하면 단일 색상을 사용합니다.")]
+    public bool useGradient = true;
+
+    [Header("[단일 색상 설정] (useGradient = false)")]
+    public Color dayColor = new Color(0.4f, 0.7f, 1f);
+    public Color nightColor = new Color(0.05f, 0.05f, 0.15f);
+
+    [Header("[그라데이션 설정] (useGradient = true)")]
+    public Color dayTopColor = new Color(0.53f, 0.81f, 0.92f, 1f);
+    public Color dayBottomColor = new Color(0.85f, 0.95f, 1f, 1f);
+    public Color nightTopColor = new Color(0.02f, 0.02f, 0.12f, 1f);
+    public Color nightBottomColor = new Color(0.08f, 0.06f, 0.25f, 1f);
+
+    [Tooltip("현재 상태 (테스트용)")]
     public bool isNight = false;
 
-    [Header("낮 배경 그라데이션 (위/아래)")]
-    public Color dayTopColor = new Color(0.53f, 0.81f, 0.92f, 1f);     // 밝은 하늘색
-    public Color dayBottomColor = new Color(0.85f, 0.95f, 1f, 1f);     // 연한 하늘색
-
-    [Header("밤 배경 그라데이션 (위/아래)")]
-    public Color nightTopColor = new Color(0.02f, 0.02f, 0.12f, 1f);   // 짙은 남색
-    public Color nightBottomColor = new Color(0.08f, 0.06f, 0.25f, 1f); // 어두운 보라
-
-    [Header("낮↔밤 전환 시간 (초)")]
-    public float transitionDuration = 2f;
-
-    [Header("배경 오브젝트 (선택사항 - 비우면 자동 검색)")]
-    [Tooltip("색상을 적용할 배경 SpriteRenderer를 직접 할당할 수 있습니다")]
-    public SpriteRenderer targetSpriteRenderer;
-
     // 내부 변수
-    private Texture2D gradientTexture;
+    private SpriteRenderer[] spriteRenderers;
+    private Image uiImage;
+    private Camera mainCamera;
+    
     private float timer = 0f;
-    private float transitionTimer = 0f;
-    private bool isTransitioning = false;
-    private Color prevTopColor, prevBottomColor;
-    private Color lastAppliedTop, lastAppliedBottom;
+    private float transitionProgress = 0f;
 
+    // 그라데이션 전용 변수
+    private Texture2D gradientTexture;
     private const int TEX_HEIGHT = 32;
 
     void Start()
     {
-        // SpriteRenderer 찾기: 직접 할당 → 자신 → 자식 순서
-        if (targetSpriteRenderer == null)
-            targetSpriteRenderer = GetComponent<SpriteRenderer>();
-        if (targetSpriteRenderer == null)
-            targetSpriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        spriteRenderers = GetComponentsInChildren<SpriteRenderer>();
+        uiImage = GetComponent<Image>();
 
-        if (targetSpriteRenderer == null)
+        if ((spriteRenderers == null || spriteRenderers.Length == 0) && uiImage == null)
         {
-            Debug.LogError("[daynight] SpriteRenderer를 찾을 수 없습니다! 배경 오브젝트를 할당해주세요.");
-            return;
+            mainCamera = Camera.main;
         }
 
-        // 원본 스프라이트 크기 정보 저장
-        Sprite origSprite = targetSpriteRenderer.sprite;
-        Vector2 origBoundsSize = origSprite != null
-            ? origSprite.bounds.size
-            : new Vector2(20f, 12f);
+        // 그라데이션 텍스처 초기화
+        if (useGradient && spriteRenderers != null && spriteRenderers.Length > 0)
+        {
+            InitializeGradient();
+        }
 
-        // ── 그라데이션 텍스처 생성 (1 x 32 픽셀) ──
+        if (autoFitToScreen)
+        {
+            FitToScreen();
+        }
+    }
+
+    private void InitializeGradient()
+    {
+        // 첫 번째 SpriteRenderer를 기준으로 그라데이션 텍스처 생성
+        SpriteRenderer targetSR = spriteRenderers[0];
+        Sprite origSprite = targetSR.sprite;
+        
+        Vector2 origBoundsSize = origSprite != null ? origSprite.bounds.size : new Vector2(20f, 12f);
+        
+        // ★ WebGL Infinity 에러 방지 (최소값 보정)
+        origBoundsSize.x = Mathf.Max(origBoundsSize.x, 0.01f);
+        origBoundsSize.y = Mathf.Max(origBoundsSize.y, 0.01f);
+
         gradientTexture = new Texture2D(1, TEX_HEIGHT, TextureFormat.RGBA32, false);
         gradientTexture.filterMode = FilterMode.Bilinear;
         gradientTexture.wrapMode = TextureWrapMode.Clamp;
 
-        // PPU를 계산하여 높이가 원본과 동일하게 맞춤
-        // 스프라이트 높이 = texHeight / ppu = origBoundsSize.y  →  ppu = texHeight / origBoundsSize.y
         float ppu = TEX_HEIGHT / origBoundsSize.y;
-
-        // 스프라이트 생성
+        
         Sprite gradientSprite = Sprite.Create(
             gradientTexture,
             new Rect(0, 0, 1, TEX_HEIGHT),
@@ -73,105 +90,125 @@ public class daynight : MonoBehaviour
             ppu
         );
 
-        // X 스케일 보정 (텍스처가 1픽셀 너비이므로 원본 너비에 맞춤)
-        // 새 스프라이트 너비 = 1 / ppu, 원본 너비 = origBoundsSize.x
         float newWidth = 1f / ppu;
         float xScaleFactor = origBoundsSize.x / newWidth;
+        if (float.IsInfinity(xScaleFactor) || float.IsNaN(xScaleFactor)) xScaleFactor = 1f;
 
-        Vector3 scale = targetSpriteRenderer.transform.localScale;
+        Vector3 scale = targetSR.transform.localScale;
         scale.x *= xScaleFactor;
-        targetSpriteRenderer.transform.localScale = scale;
+        targetSR.transform.localScale = scale;
 
-        // 스프라이트 교체 (기본 Sprites 머테리얼을 그대로 유지 → 2D 정렬 시스템 정상 작동)
-        targetSpriteRenderer.sprite = gradientSprite;
-        targetSpriteRenderer.color = Color.white;
+        targetSR.sprite = gradientSprite;
+        targetSR.color = Color.white;
 
-        // 커스텀 셰이더 머테리얼이 남아있을 경우 기본 스프라이트 셰이더로 복원
-        if (targetSpriteRenderer.sharedMaterial != null &&
-            targetSpriteRenderer.sharedMaterial.shader.name == "Custom/VerticalGradient")
+        // 다른 모든 SpriteRenderer도 동일하게 텍스처 적용
+        for (int i = 1; i < spriteRenderers.Length; i++)
         {
-            Shader defaultShader = Shader.Find("Universal Render Pipeline/2D/Sprite-Lit-Default");
-            if (defaultShader == null)
-                defaultShader = Shader.Find("Sprites/Default");
-            if (defaultShader != null)
-                targetSpriteRenderer.material = new Material(defaultShader);
+            spriteRenderers[i].sprite = gradientSprite;
+            spriteRenderers[i].color = Color.white;
+            spriteRenderers[i].transform.localScale = targetSR.transform.localScale;
         }
-
-        // 초기 색상 적용
-        Color initTop = isNight ? nightTopColor : dayTopColor;
-        Color initBottom = isNight ? nightBottomColor : dayBottomColor;
-        UpdateGradientTexture(initTop, initBottom);
-
-        prevTopColor = initTop;
-        prevBottomColor = initBottom;
     }
 
     void Update()
     {
-        if (gradientTexture == null) return;
+        if (autoFitToScreen)
+        {
+            FitToScreen(); 
+        }
 
         timer += Time.deltaTime;
         float currentCycleDuration = isNight ? nightDuration : dayDuration;
-
-        // 낮/밤 전환 시점
         if (timer >= currentCycleDuration)
         {
-            prevTopColor = isNight ? nightTopColor : dayTopColor;
-            prevBottomColor = isNight ? nightBottomColor : dayBottomColor;
-
             isNight = !isNight;
             timer = 0f;
-            transitionTimer = 0f;
-            isTransitioning = true;
         }
 
-        // 현재 목표 색상
-        Color targetTop = isNight ? nightTopColor : dayTopColor;
-        Color targetBottom = isNight ? nightBottomColor : dayBottomColor;
+        float targetProgress = isNight ? 1f : 0f;
+        transitionProgress = Mathf.Lerp(transitionProgress, targetProgress, Time.deltaTime * transitionSpeed);
 
-        Color finalTop, finalBottom;
-
-        if (isTransitioning)
+        if (useGradient && gradientTexture != null)
         {
-            transitionTimer += Time.deltaTime;
-            float t = Mathf.Clamp01(transitionTimer / transitionDuration);
-            t = t * t * (3f - 2f * t); // SmoothStep
-
-            finalTop = Color.Lerp(prevTopColor, targetTop, t);
-            finalBottom = Color.Lerp(prevBottomColor, targetBottom, t);
-
-            if (t >= 1f)
-                isTransitioning = false;
+            // 그라데이션 색상 업데이트
+            Color currentTop = Color.Lerp(dayTopColor, nightTopColor, transitionProgress);
+            Color currentBottom = Color.Lerp(dayBottomColor, nightBottomColor, transitionProgress);
+            UpdateGradientTexture(currentTop, currentBottom);
         }
         else
         {
-            finalTop = targetTop;
-            finalBottom = targetBottom;
-        }
-
-        // 색상이 바뀌었을 때만 텍스처 업데이트 (성능 최적화)
-        if (finalTop != lastAppliedTop || finalBottom != lastAppliedBottom)
-        {
-            UpdateGradientTexture(finalTop, finalBottom);
+            // 단일 색상 업데이트
+            Color currentColor = Color.Lerp(dayColor, nightColor, transitionProgress);
+            ApplySolidColor(currentColor);
         }
     }
 
-    /// <summary>
-    /// 그라데이션 텍스처의 픽셀을 갱신합니다. (1 x 32 픽셀만 갱신하므로 매우 가벼움)
-    /// </summary>
-    private void UpdateGradientTexture(Color topColor, Color bottomColor)
+    private void UpdateGradientTexture(Color top, Color bottom)
     {
-        topColor.a = 1f;
-        bottomColor.a = 1f;
-
         for (int y = 0; y < TEX_HEIGHT; y++)
         {
             float t = (float)y / (TEX_HEIGHT - 1);
-            gradientTexture.SetPixel(0, y, Color.Lerp(bottomColor, topColor, t));
+            gradientTexture.SetPixel(0, y, Color.Lerp(bottom, top, t));
         }
         gradientTexture.Apply();
+    }
 
-        lastAppliedTop = topColor;
-        lastAppliedBottom = bottomColor;
+    private void ApplySolidColor(Color color)
+    {
+        if (spriteRenderers != null && spriteRenderers.Length > 0)
+        {
+            foreach (var sr in spriteRenderers)
+                if (sr != null) sr.color = color;
+        }
+        else if (uiImage != null)
+        {
+            uiImage.color = color;
+        }
+        else if (mainCamera != null)
+        {
+            mainCamera.backgroundColor = color;
+        }
+    }
+
+    void FitToScreen()
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        if (uiImage != null)
+        {
+            RectTransform rt = uiImage.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            return;
+        }
+
+        if (spriteRenderers != null && spriteRenderers.Length > 0 && cam.orthographic)
+        {
+            transform.localScale = Vector3.one; 
+
+            float camHeight = cam.orthographicSize * 2f;
+            float camWidth = camHeight * cam.aspect;
+
+            Bounds bounds = new Bounds(spriteRenderers[0].transform.position, Vector3.zero);
+            foreach (var sr in spriteRenderers)
+            {
+                if (sr.sprite != null)
+                    bounds.Encapsulate(sr.bounds);
+            }
+
+            float spriteW = bounds.size.x;
+            float spriteH = bounds.size.y;
+            if (spriteW <= 0.01f || spriteH <= 0.01f) return;
+
+            float scaleX = camWidth / spriteW;
+            float scaleY = camHeight / spriteH;
+            
+            // 비율을 유지하면서 넉넉하게 덮음
+            float scale = Mathf.Max(scaleX, scaleY) * 1.05f;
+            transform.localScale = new Vector3(scale, scale, 1f);
+        }
     }
 }
