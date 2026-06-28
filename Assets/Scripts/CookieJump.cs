@@ -249,6 +249,17 @@ public class CookieJump : MonoBehaviour
     // ───────────────────────────────────────────
 
     /// <summary>
+    /// 외부(UI 등)에서 점프를 실행할 때 호출
+    /// </summary>
+    public void Jump()
+    {
+        if (!_isSliding)
+        {
+            TryJump();
+        }
+    }
+
+    /// <summary>
     /// 바닥에 있는지 여부
     /// </summary>
     public bool IsGrounded => _isGrounded;
